@@ -22,7 +22,7 @@ def get_stock_ohlcv(symbol='AAPL', interval='1m', period='1mo'):
     - interval: resolución ('1m', '5m', '15m', '1h', '1d', etc.)
     - period: cuánto tiempo atrás ('1d', '5d', '1mo', '3mo', etc.)
     """
-    df = yf.download(tickers=symbol, interval=interval, period=period, progress=False)
+    df = yf.download(tickers=symbol, interval=interval, period=period, progress=False, auto_adjust=True)
     df.reset_index(inplace=True)
     df.rename(columns={'Date': 'timestamp', 'Close': 'close'}, inplace=True)
     df['returns'] = np.log(df['close'] / df['close'].shift(1))
