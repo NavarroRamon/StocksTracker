@@ -136,7 +136,12 @@ def format_msg(activo, row, q24, q48, temporalidades):
     return msg
 
 def check_stocks_time():
-    if datetime.now().hour >= 18 or datetime.now() < 2:
+    """
+    :return: boolean, True if
+    """
+    if datetime.now().hour >= 18 or datetime.now().hour < 2:
+        return True
+    elif datetime.now().weekday() in [5,6]:
         return True
     return False
 
