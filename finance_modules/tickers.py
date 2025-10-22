@@ -24,7 +24,7 @@ acciones = [
     'PEP',   # Pepsi
     'COST',  # Costco
     'MCD',   # McDonald's
-    'BABA'
+    'BABA',
     # Salud y farmacéutica (crecimiento + estabilidad)
     'ABBV',  # AbbVie (fuertes ingresos por patentes)
     'PFE',   # PFIZER
