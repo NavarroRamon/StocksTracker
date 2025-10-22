@@ -207,12 +207,12 @@ if __name__ == "__main__":
                 q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                 q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
             if row['close'] < q24['q5']:
-                alerta = True
                 send_discord(format_msg(activo_name, row, q24, q48, ['24H', '48H']))
                 send_telegram(format_msg(activo_name, row, q24, q48, ['2W', '1MO']))
                 if sound == 1:
                     engine.say(f"{activo_name} mínimo global {int(row['close'])}")
                     engine.runAndWait()
+                alerta = True
             # Alerta RSI
             if alerta:
                 # Si aplica RSI busca para 5m, 15m y 1h
