@@ -122,9 +122,7 @@ def pct_diff(base, ref):
 
 def format_msg(activo, row, q24, q48, temporalidades):
     close = row['close']
-    msg = (
-        f"<b>{activo} {close:.2f}</b>\n"
-        f"Minimo global en {temporalidades[0]}\n"
+    msg = (f"Minimo global en {temporalidades[0]}\n"
         f"{q24['q5']:.2f} ({pct_diff(close, q24['q5'])}) | "
         f"{q24['q50']:.2f} ({pct_diff(close, q24['q50'])}) | "
         f"{q24['q75']:.2f} ({pct_diff(close, q24['q75'])})\n"
@@ -207,8 +205,10 @@ if __name__ == "__main__":
                 q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                 q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
             if row['close'] < q24['q5']:
-                send_discord(format_msg(activo_name, row, q24, q48, ['24H', '48H']))
-                send_telegram(format_msg(activo_name, row, q24, q48, ['2W', '1MO']))
+                if activo in stocks:
+                    msg += format_msg(activo_name, row, q24, q48, ['2W', '1MO'])
+                else:
+                    msg += format_msg(activo_name, row, q24, q48, ['24H', '48H'])
                 if sound == 1:
                     engine.say(f"{activo_name} mínimo global {int(row['close'])}")
                     engine.runAndWait()
