@@ -206,9 +206,9 @@ if __name__ == "__main__":
                 q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
             if row['close'] < q24['q5']:
                 if activo in stocks:
-                    msg += format_msg(activo_name, row, q24, q48, ['2W', '1MO'])
+                    msg += f"{format_msg(activo_name, row, q24, q48, ['2W', '1MO'])}\n"
                 else:
-                    msg += format_msg(activo_name, row, q24, q48, ['24H', '48H'])
+                    msg += f"{format_msg(activo_name, row, q24, q48, ['24H', '48H'])}\n"
                 if sound == 1:
                     engine.say(f"{activo_name} mínimo global {int(row['close'])}")
                     engine.runAndWait()
