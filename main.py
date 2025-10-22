@@ -191,7 +191,7 @@ if __name__ == "__main__":
                 alerta, rsi_vals = rsi_multi_tf_cripto_check(activo)
             else:
                 alerta, rsi_vals = rsi_multi_tf_stock_check(activo)
-
+            alerta = False
             # Data Actual
             row = df.iloc[-1]
             msg = f"**{activo_name}** **{row['close']:.2f}**\n"
