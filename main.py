@@ -215,10 +215,7 @@ if __name__ == "__main__":
                 alerta = True
             # Alerta RSI
             if alerta:
-                # Si aplica RSI busca para 5m, 15m y 1h
-                msg += (f"{q24['q5']} ({100*(q24['q5']/row['close']-1):.1f}) "
-                       f"| {q24['q50']} ({100*(q24['q50']/row['close']-1):.1f}) "
-                       f"| {q24['q75']} ({100*(q24['q75']/row['close']-1):.1f})\n")
+                # Devuelve RSI en temporalidades
                 for tf, val in rsi_vals.items():
                     msg += f"RSI: {val:.0f}: {tf}\n"
                 # Alerta ADX
