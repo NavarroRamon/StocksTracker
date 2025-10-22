@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 sound = os.getenv('SOUND')
+loop = os.getenv('LOOP', False)
 if sound == 1:
     import pyttsx3
     engine = pyttsx3.init()
@@ -72,7 +73,7 @@ def rsi_multi_tf_cripto_check(symbol, timeframes=('1m', '30m', '1h', '4h', '1d')
             df_tf = get_ohlcv(symbol=symbol, timeframe=tf, limit=window+1)
             df_tf = rsi(df_tf, window)  # Aplica tu función rsi que agrega la columna 'rsi'
             current_rsi = round(df_tf['rsi'].iloc[-1], 2)
-            if current_rsi < threshold:
+            if current_rsi < threshold and tf != '1m':
                 num_alertas +=1
             rsi_result[tf] = current_rsi
         except Exception as e:
@@ -108,13 +109,12 @@ def rsi_multi_tf_stock_check(symbol, timeframes=None, threshold=30, window=14):
             current_rsi = round(df_tf['rsi'].iloc[-1], 2)
             rsi_result[interval] = current_rsi
 
-            if current_rsi < threshold:
+            if current_rsi < threshold and interval != '1m':
                 alerta = True
 
         except Exception as e:
             print(f"Error en {interval}: {e}")
             continue
-
     return alerta, rsi_result
 
 def pct_diff(base, ref):
@@ -123,16 +123,17 @@ def pct_diff(base, ref):
 def format_msg(activo, row, q24, q48, temporalidades):
     close = row['close']
     msg = (
-        f"<b>{activo} {round(close,2)}</b>\n"
+        f"<b>{activo} {close:.2f}</b>\n"
         f"Minimo global en {temporalidades[0]}\n"
-        f"{round(q24['q5'], 2)} ({pct_diff(close, q24['q5'])}) | "
-        f"{round(q24['q50'], 2)} ({pct_diff(close, q24['q50'])}) | "
-        f"{round(q24['q75'], 2)} ({pct_diff(close, q24['q75'])})\n"
+        f"{q24['q5']:.2f} ({pct_diff(close, q24['q5'])}) | "
+        f"{q24['q50']:.2f} ({pct_diff(close, q24['q50'])}) | "
+        f"{q24['q75']:.2f} ({pct_diff(close, q24['q75'])})\n"
         f"Minimo global en {temporalidades[1]}\n"
-        f"{round(q48['q5'], 2)} ({pct_diff(close, q48['q5'])}) | "
-        f"{round(q48['q50'], 2)} ({pct_diff(close, q48['q50'])}) | "
-        f"{round(q48['q75'], 2)} ({pct_diff(close, q48['q75'])})"
+        f"{q48['q5']:.2f} ({pct_diff(close, q48['q5'])}) | "
+        f"{q48['q50']:.2f} ({pct_diff(close, q48['q50'])}) | "
+        f"{q48['q75']:.2f} ({pct_diff(close, q48['q75'])})"
     )
+
     return msg
 
 def check_stocks_time():
@@ -161,6 +162,7 @@ if __name__ == "__main__":
 
     while True:
         for activo in trackeo:
+            activo_name = activo.split('/')[0]
             try:
                 # ALTA FRECUENCIA OPERANDO CON 1Minuto de muestreo =============
                 if activo in symbols:
@@ -192,7 +194,7 @@ if __name__ == "__main__":
 
             # Data Actual
             row = df.iloc[-1]
-
+            msg = f"**{activo_name}** **{row['close']:.2f}**\n"
             # MINIMO GLOBAL
             if activo in symbols:
                 quantiles_df = get_ohlcv(symbol=activo, timeframe='3m', limit=1000)
@@ -205,37 +207,39 @@ if __name__ == "__main__":
                 q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                 q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
             if row['close'] < q24['q5']:
-                send_discord(format_msg(activo, row, q24, q48, ['24H', '48H']))
-                send_telegram(format_msg(activo, row, q24, q48, ['2W', '1MO']))
+                send_discord(format_msg(activo_name, row, q24, q48, ['24H', '48H']))
+                send_telegram(format_msg(activo_name, row, q24, q48, ['2W', '1MO']))
                 if sound == 1:
-                    engine.say(f"{activo.split('/')[0]} mínimo global {int(row['close'])}")
+                    engine.say(f"{activo_name} mínimo global {int(row['close'])}")
                     engine.runAndWait()
             # Alerta RSI
             if alerta:
                 # Si aplica RSI busca para 5m, 15m y 1h
-                msg = (f"RSI MULTI-TF {activo}\n{row['close']}\n"
-                       f"{q24['q5']} ({round(100*(q24['q5']/row['close']-1), 1)}) "
-                       f"| {q24['q50']} ({round(100*(q24['q50']/row['close']-1), 1)}) "
-                       f"| {q24['q75']} ({round(100*(q24['q75']/row['close']-1), 1)})\n")
+                msg += (f"{q24['q5']} ({100*(q24['q5']/row['close']-1):.1f}) "
+                       f"| {q24['q50']} ({100*(q24['q50']/row['close']-1):.1f}) "
+                       f"| {q24['q75']} ({100*(q24['q75']/row['close']-1):.1f})\n")
                 for tf, val in rsi_vals.items():
-                    msg += f"{tf}: {val}\n"
+                    msg += f"RSI: {val:.0f}: {tf}\n"
                 # Alerta ADX
                 if row.get('adx_fuerte', False):
                     if row['tendencia_alcista']:
-                        #                        if df['z_score'].iloc[-1] > 1.5: #aun no implementare esto hasta verificar si se requiere
                         q_vals = get_quantiles(df)
                         rango_total = q_vals['q75'] - q_vals['q25']
                         rango_libre = q_vals['q75'] - df['close'].iloc[-1]
-
                         # Normaliza
                         rango_libre_pct = rango_libre / rango_total
-                        msg += f"{activo} TENDENCIA ALCISTA {row['adx']}\nRango libre porcentual operar {rango_libre_pct}, Q75{q_vals['q75']}\n"
+                        msg += (f"TENDENCIA ALCISTA {row['adx']:.2f}\n"
+                                f"RangoLibrePorcentual: {rango_libre_pct:.1f}, Q75: {q_vals['q75']:.2f}\n")
                     else:
-                        msg += f"{activo} tendencia bajista {row['adx']}\n"
+                        msg += f"TENDENCIA BAJISTA {row['adx']:.2f}\n"
                 # Alerta Z-Score
                 if row.get('alerta_z', False):
-                    msg += f":ALERTA Z SCORE {activo}\nclose: {row['close']} media: {row['media_lenta']}\nValorZ: {row['z_score']}\n"
+                    msg += f"Z SCORE\nclose: {row['close']} media: {row['media_lenta']}\nValorZ: {row['z_score']}\n"
 
                 send_discord(msg)
                 send_telegram(msg)
-        time.sleep(60*4)
+        if not loop:
+            print('Exiting code')
+            break
+        else:
+            time.sleep(60*4)
