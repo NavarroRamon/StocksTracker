@@ -185,11 +185,6 @@ if __name__ == "__main__":
             # ADX: mide tendencia
             df = alerta_adx(df)
 
-            if activo in symbols:
-                alerta, rsi_vals = rsi_multi_tf_cripto_check(activo)
-            else:
-                alerta, rsi_vals = rsi_multi_tf_stock_check(activo)
-            alerta = False
             # Data Actual
             row = df.iloc[-1]
             msg = f"**{activo_name}** **{row['close']:.2f}**\n"
@@ -212,9 +207,11 @@ if __name__ == "__main__":
                 if sound == 1:
                     engine.say(f"{activo_name} mínimo global {int(row['close'])}")
                     engine.runAndWait()
-                alerta = True
-            # Alerta RSI
-            if alerta:
+                if activo in symbols:
+                    alerta, rsi_vals = rsi_multi_tf_cripto_check(activo)
+                else:
+                    alerta, rsi_vals = rsi_multi_tf_stock_check(activo)
+                # Alerta RSI
                 # Devuelve RSI en temporalidades
                 for tf, val in rsi_vals.items():
                     msg += f"RSI: {val:.0f}: {tf}\n"
