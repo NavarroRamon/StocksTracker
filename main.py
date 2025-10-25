@@ -6,6 +6,7 @@ from datetime import datetime
 import numpy as np
 
 # Data
+from modules.file_value import read_value, write_value, delete_value
 from finance_modules.tickers import acciones
 # Alertas
 from finance_modules.discord import send_discord
@@ -188,51 +189,57 @@ if __name__ == "__main__":
             # Data Actual
             row = df.iloc[-1]
             msg = f"**{activo_name}** **{row['close']:.2f}**\n"
-            # MINIMO GLOBAL
-            if activo in symbols:
-                quantiles_df = get_ohlcv(symbol=activo, timeframe='3m', limit=1000)
-                # Identifica la distribucion en las ultima hora ( para ver el rango)
-                q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
-            else:
-                quantiles_df = get_stock_ohlcv(symbol=activo, interval='5m', period='1mo')
-                # Identifica la distribucion en las ultima hora ( para ver el rango)
-                q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
-            if row['close'] < q24['q5']:
-                if activo in stocks:
-                    msg += f"{format_msg(activo_name, row, q24, q48, ['2W', '1MO'])}\n"
-                else:
-                    msg += f"{format_msg(activo_name, row, q24, q48, ['24H', '48H'])}\n"
-                if sound == 1:
-                    engine.say(f"{activo_name} mínimo global {int(row['close'])}")
-                    engine.runAndWait()
-                if activo in symbols:
-                    alerta, rsi_vals = rsi_multi_tf_cripto_check(activo)
-                else:
-                    alerta, rsi_vals = rsi_multi_tf_stock_check(activo)
-                # Alerta RSI
-                # Devuelve RSI en temporalidades
-                for tf, val in rsi_vals.items():
-                    msg += f"RSI: {val:.0f}: {tf}\n"
-                # Alerta ADX
-                if row.get('adx_fuerte', False):
-                    if row['tendencia_alcista']:
-                        q_vals = get_quantiles(df)
-                        rango_total = q_vals['q75'] - q_vals['q25']
-                        rango_libre = q_vals['q75'] - df['close'].iloc[-1]
-                        # Normaliza
-                        rango_libre_pct = rango_libre / rango_total
-                        msg += (f"TENDENCIA ALCISTA {row['adx']:.2f}\n"
-                                f"RangoLibrePorcentual: {rango_libre_pct:.1f}, Q75: {q_vals['q75']:.2f}\n")
-                    else:
-                        msg += f"TENDENCIA BAJISTA {row['adx']:.2f}\n"
-                # Alerta Z-Score
-                if row.get('alerta_z', False):
-                    msg += f"Z SCORE\nclose: {row['close']} media: {row['media_lenta']}\nValorZ: {row['z_score']}\n"
 
-                send_discord(msg)
-                send_telegram(msg)
+            # Minimo historico en trackeo
+            path = os.path.join('data', f"{activo_name}.txt")
+            prev_value = read_value(path)
+            if prev_value is None or row['close'] < float(prev_value):
+                write_value(path, row['close'])
+                # MINIMO GLOBAL
+                if activo in symbols:
+                    quantiles_df = get_ohlcv(symbol=activo, timeframe='3m', limit=1000)
+                    # Identifica la distribucion en las ultima hora ( para ver el rango)
+                    q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
+                    q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
+                else:
+                    quantiles_df = get_stock_ohlcv(symbol=activo, interval='5m', period='1mo')
+                    # Identifica la distribucion en las ultima hora ( para ver el rango)
+                    q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
+                    q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
+                if row['close'] < q24['q5']:
+                    if activo in stocks:
+                        msg += f"{format_msg(activo_name, row, q24, q48, ['2W', '1MO'])}\n"
+                    else:
+                        msg += f"{format_msg(activo_name, row, q24, q48, ['24H', '48H'])}\n"
+                    if sound == 1:
+                        engine.say(f"{activo_name} mínimo global {int(row['close'])}")
+                        engine.runAndWait()
+                    if activo in symbols:
+                        alerta, rsi_vals = rsi_multi_tf_cripto_check(activo)
+                    else:
+                        alerta, rsi_vals = rsi_multi_tf_stock_check(activo)
+                    # Alerta RSI
+                    # Devuelve RSI en temporalidades
+                    for tf, val in rsi_vals.items():
+                        msg += f"RSI: {val:.0f}: {tf}\n"
+                    # Alerta ADX
+                    if row.get('adx_fuerte', False):
+                        if row['tendencia_alcista']:
+                            q_vals = get_quantiles(df)
+                            rango_total = q_vals['q75'] - q_vals['q25']
+                            rango_libre = q_vals['q75'] - df['close'].iloc[-1]
+                            # Normaliza
+                            rango_libre_pct = rango_libre / rango_total
+                            msg += (f"TENDENCIA ALCISTA {row['adx']:.2f}\n"
+                                    f"RangoLibrePorcentual: {rango_libre_pct:.1f}, Q75: {q_vals['q75']:.2f}\n")
+                        else:
+                            msg += f"TENDENCIA BAJISTA {row['adx']:.2f}\n"
+                    # Alerta Z-Score
+                    if row.get('alerta_z', False):
+                        msg += f"Z SCORE\nclose: {row['close']} media: {row['media_lenta']}\nValorZ: {row['z_score']}\n"
+
+                    send_discord(msg)
+                    send_telegram(msg)
         if not loop:
             print('Exiting code')
             break
