@@ -149,7 +149,7 @@ def check_stocks_time():
 if __name__ == "__main__":
     symbols = ['SOL/USDT'] #, 'VIRTUAL/USDT']
     stocks = acciones
-    trackeo = symbols+stocks
+    trackeo = symbols
     print(f"Script iniciado: trackeo hibrido {trackeo}")
 
     # Variables
@@ -193,8 +193,7 @@ if __name__ == "__main__":
             # Minimo historico en trackeo
             path = os.path.join('data', f"{activo_name}.txt")
             prev_value = read_value(path)
-            if prev_value is None or row['close'] < float(prev_value):
-                write_value(path, row['close'])
+            if prev_value is None or row['close'] < float(prev_value) or activo in symbols:
                 # MINIMO GLOBAL
                 if activo in symbols:
                     quantiles_df = get_ohlcv(symbol=activo, timeframe='3m', limit=1000)
@@ -207,6 +206,7 @@ if __name__ == "__main__":
                     q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                     q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
                 if row['close'] < q24['q5']:
+                    write_value(path, row['close'])
                     if activo in stocks:
                         msg += f"{format_msg(activo_name, row, q24, q48, ['2W', '1MO'])}\n"
                     else:
