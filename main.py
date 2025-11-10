@@ -203,13 +203,13 @@ if __name__ == "__main__":
                     q12 = get_quantiles(quantiles_df[250:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                     q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                     q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                    q_corte = min([q12['q5'],q24['q5'], q48['48']])
+                    q_corte = min([q12['q5'], q24['q5'], q48['q5']])
                 else:
                     quantiles_df = get_stock_ohlcv(symbol=activo, interval='5m', period='1mo')
                     # Identifica la distribucion en las ultima hora ( para ver el rango)
                     q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                     q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                    q_corte = min([q24['q5'], q48['48']])
+                    q_corte = min([q24['q5'], q48['q5']])
                 if row['close'] < q_corte:
                     write_value(path, row['close'])
                     if activo in stocks:
