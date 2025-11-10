@@ -121,19 +121,21 @@ def rsi_multi_tf_stock_check(symbol, timeframes=None, threshold=30, window=14):
 def pct_diff(base, ref):
     return round(100 * (ref / base - 1), 1)
 
-def format_msg(activo, row, q24, q48, temporalidades):
-    close = row['close']
-    msg = (f"Minimo global en {temporalidades[0]}\n"
-        f"{q24['q5']:.2f} ({pct_diff(close, q24['q5'])}) | "
-        f"{q24['q50']:.2f} ({pct_diff(close, q24['q50'])}) | "
-        f"{q24['q75']:.2f} ({pct_diff(close, q24['q75'])})\n"
-        f"Minimo global en {temporalidades[1]}\n"
-        f"{q48['q5']:.2f} ({pct_diff(close, q48['q5'])}) | "
-        f"{q48['q50']:.2f} ({pct_diff(close, q48['q50'])}) | "
-        f"{q48['q75']:.2f} ({pct_diff(close, q48['q75'])})"
-    )
+def format_msg(activo, close, quantiles):
+    lines = []
 
+    for temporalidad, qdict in quantiles.items():
+        line = (
+            f"Minimo global en {temporalidad}\n"
+            f"{qdict['q5']:.2f} ({pct_diff(close, qdict['q5'])}) | "
+            f"{qdict['q50']:.2f} ({pct_diff(close, qdict['q50'])}) | "
+            f"{qdict['q75']:.2f} ({pct_diff(close, qdict['q75'])})"
+        )
+        lines.append(line)
+
+    msg = "\n".join(lines)
     return msg
+
 
 def check_stocks_time():
     """
@@ -165,7 +167,7 @@ if __name__ == "__main__":
             try:
                 # ALTA FRECUENCIA OPERANDO CON 1Minuto de muestreo =============
                 if activo in symbols:
-                    df = get_ohlcv(symbol=activo, timeframe='1m', limit=60*2)
+                    df = get_ohlcv(symbol=activo, timeframe='3m', limit=1000)
                 elif activo in stocks:
                     if check_stocks_time():
                         continue
@@ -196,21 +198,24 @@ if __name__ == "__main__":
             if prev_value is None or row['close'] < float(prev_value) or activo in symbols:
                 # MINIMO GLOBAL
                 if activo in symbols:
-                    quantiles_df = get_ohlcv(symbol=activo, timeframe='3m', limit=1000)
+                    quantiles_df = df
                     # Identifica la distribucion en las ultima hora ( para ver el rango)
+                    q12 = get_quantiles(quantiles_df[250:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                     q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                     q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
+                    q_corte = min([q12['q5'],q24['q5'], q48['48']])
                 else:
                     quantiles_df = get_stock_ohlcv(symbol=activo, interval='5m', period='1mo')
                     # Identifica la distribucion en las ultima hora ( para ver el rango)
                     q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
                     q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                if row['close'] < q24['q5']:
+                    q_corte = min([q24['q5'], q48['48']])
+                if row['close'] < q_corte:
                     write_value(path, row['close'])
                     if activo in stocks:
-                        msg += f"{format_msg(activo_name, row, q24, q48, ['2W', '1MO'])}\n"
-                    else:
-                        msg += f"{format_msg(activo_name, row, q24, q48, ['24H', '48H'])}\n"
+                        msg += f"{format_msg(activo_name, row['close'], {'2W': q24, '1MO': q48})}\n"
+                    elif activo in symbols:
+                        msg += f"{format_msg(activo_name, row['close'], {'12': q12, '24':q24, '48':q48})}\n"
                     if sound == 1:
                         engine.say(f"{activo_name} mínimo global {int(row['close'])}")
                         engine.runAndWait()
