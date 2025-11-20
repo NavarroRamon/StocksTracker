@@ -98,7 +98,7 @@ def rsi_multi_tf_stock_check(symbol, timeframes=None, threshold=30, window=14):
         (bool, dict): (alerta, {tf: valor_rsi})
     """
     if timeframes is None:
-        timeframes = {'1m': '1d', '15m': '5d', '1h': '1mo', '1d': '6mo'}
+        timeframes = {'1m': '1d', '15m': '5d', '1h': '1mo', '4h':'1mo', '1d': '6mo'}
 
     rsi_result = {}
     alerta = False
@@ -151,7 +151,7 @@ def check_stocks_time():
 if __name__ == "__main__":
     symbols = ['SOL/USDT'] #, 'VIRTUAL/USDT']
     stocks = acciones
-    trackeo = symbols
+    trackeo = symbols + stocks
     print(f"Script iniciado: trackeo hibrido {trackeo}")
 
     # Variables
