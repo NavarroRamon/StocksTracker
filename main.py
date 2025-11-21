@@ -1,152 +1,175 @@
-# Utils
-import time
 from datetime import datetime
-
-# Estadisticos de data
-import numpy as np
-
-# Data
-from modules.file_value import read_value, write_value, delete_value
+import pandas as pd
 from finance_modules.tickers import acciones
-# Alertas
-from finance_modules.discord import send_discord
 from finance_modules.telegram import send_telegram
-# modulos
-from finance_modules.indicators import get_quantiles, get_bollinger, es_minimo_local, rsi, get_adx
-from finance_modules.data import get_ohlcv, get_stock_ohlcv
+from finance_modules.data import get_ohlcv
+from StocksTracker.db.db import create_db, insert_candles, get_latest_open_time
+from pathlib import Path
 
-# Config
-from dotenv import load_dotenv
-import os
-load_dotenv()
-sound = os.getenv('SOUND')
-loop = os.getenv('LOOP', False)
-if sound == 1:
-    import pyttsx3
-    engine = pyttsx3.init()
+DB_PATH = Path("db/trading_data.db")
 
+def ensure_db():
+    create_db()  # crea si no existe
 
-def alerta_rsi(df):
-    # Calcula RSI
-    df = rsi(df,14)
-
-    # Aplicar bollinger
-    df = get_bollinger(df)
-    df['minimo_local'] = es_minimo_local(df['close'], 60)
-
-    # Determina la condicion
-    df['alerta_rsi'] = (df['rsi'] < 30) & (df['close'] < df['bb_lower'])
-    return df
-
-def alerta_percentil(serie, percentil, last_n=50):
+def df_to_records(df: pd.DataFrame, symbol: str, interval: str, epoch_ms=True):
     """
-    :param serie: Data de entrada en formato de serie
-    :param percentil: El percentil que se decea calcular
-    :param last_n: La cantidad de rows hacia atras que se usan para el calculo
-    :return: Serie con el valor del percentil_x para cada grupo de last_n datos
+    normaliza dataframe y devuelve tuplas para insertar
+    Espera columnas: open_time, open, high, low, close, volume, rsi
     """
-    percentil_x = (serie.rolling(window=last_n, min_periods=last_n).apply(lambda x: np.percentile(x, percentil), raw=True))
-    return percentil_x
+    df2 = df.copy()
+    # Asegurar open_time en epoch ms (entero)
+    if pd.api.types.is_datetime64_any_dtype(df2['open_time']):
+        df2['open_time'] = (df2['open_time'].astype('int64') // 1_000_000)  # ns -> ms
+    else:
+        # si ya está en segundos, convertir a ms si es necesario
+        # asumimos que viene en ms o s; heurística: si valores < 1e11 -> segundos
+        sample = int(df2['open_time'].iloc[0])
+        if sample < 1e11:
+            df2['open_time'] = df2['open_time'].astype(int) * 1000
 
-def alerta_adx(df, window=14, threshold=25):
-    # get calculations
-    df = get_adx(df, window)
-    # Lógica de alerta
-    df['adx_fuerte'] = df['adx'] > threshold
-    df['tendencia_alcista'] = (df['plus_di'] > df['minus_di']) & df['adx_fuerte']
-    df['tendencia_bajista'] = (df['minus_di'] > df['plus_di']) & df['adx_fuerte']
-    return df
-
-def alerta_z(series, n_media_lenta, n_desv):
-    # Obtener medias moviles
-    media_lenta = series.rolling(window=n_media_lenta).mean()
-    # Calcula desviacion estandar y z-score
-    desvest = series.rolling(n_desv).std()
-    z_score = (series-media_lenta)/desvest
-    return z_score
-
-def rsi_multi_tf_cripto_check(symbol, timeframes=('1m', '30m', '1h', '4h', '1d'), threshold=30, window=14):
-    rsi_result = {}
-    alerta = False
-    num_alertas = 0
-    for tf in timeframes:
-        try:
-            df_tf = get_ohlcv(symbol=symbol, timeframe=tf, limit=window+1)
-            df_tf = rsi(df_tf, window)  # Aplica tu función rsi que agrega la columna 'rsi'
-            current_rsi = round(df_tf['rsi'].iloc[-1], 2)
-            if current_rsi < threshold and tf != '1m':
-                num_alertas +=1
-            rsi_result[tf] = current_rsi
-        except Exception as e:
-            continue
-    if num_alertas >=1:
-        alerta = True
-    if alerta == False:
-        return False, rsi_result
-    return True, rsi_result
-
-
-def rsi_multi_tf_stock_check(symbol, timeframes=None, threshold=30, window=14):
-    """
-    Calcula el RSI de un símbolo en múltiples temporalidades y genera una alerta si alguno cae por debajo del umbral.
-    Args:
-        symbol (str): símbolo bursátil (ej. 'AAPL')
-        timeframes (dict): diccionario con intervalos y periodos. Ej: {'1m': '1d', '15m': '5d', '1h': '1mo', '1d': '6mo'}
-        threshold (float): umbral de alerta para RSI.
-        window (int): número de periodos para calcular RSI.
-    Returns:
-        (bool, dict): (alerta, {tf: valor_rsi})
-    """
-    if timeframes is None:
-        timeframes = {'1m': '1d', '15m': '5d', '1h': '1mo', '4h':'1mo', '1d': '6mo'}
-
-    rsi_result = {}
-    alerta = False
-
-    for interval, period in timeframes.items():
-        try:
-            df_tf = get_stock_ohlcv(symbol=symbol, interval=interval, period=period)
-            df_tf = rsi(df_tf, window)  # función rsi debe devolver df con columna 'rsi'
-            current_rsi = round(df_tf['rsi'].iloc[-1], 2)
-            rsi_result[interval] = current_rsi
-
-            if current_rsi < threshold and interval != '1m':
-                alerta = True
-
-        except Exception as e:
-            print(f"Error en {interval}: {e}")
-            continue
-    return alerta, rsi_result
-
-def pct_diff(base, ref):
-    return round(100 * (ref / base - 1), 1)
-
-def format_msg(activo, close, quantiles):
-    lines = []
-
-    for temporalidad, qdict in quantiles.items():
-        line = (
-            f"Minimo global en {temporalidad}\n"
-            f"{qdict['q5']:.2f} ({pct_diff(close, qdict['q5'])}) | "
-            f"{qdict['q50']:.2f} ({pct_diff(close, qdict['q50'])}) | "
-            f"{qdict['q75']:.2f} ({pct_diff(close, qdict['q75'])})"
+    records = []
+    for _, row in df2.iterrows():
+        rec = (
+            symbol,
+            interval,
+            int(row['open_time']),
+            float(row.get('open', None)) if not pd.isna(row.get('open', None)) else None,
+            float(row.get('high', None)) if not pd.isna(row.get('high', None)) else None,
+            float(row.get('low', None)) if not pd.isna(row.get('low', None)) else None,
+            float(row.get('close', None)) if not pd.isna(row.get('close', None)) else None,
+            float(row.get('volume', None)) if not pd.isna(row.get('volume', None)) else None,
+            float(row.get('rsi', None)) if not pd.isna(row.get('rsi', None)) else None,
+            row.get('local_time')
         )
-        lines.append(line)
-
-    msg = "\n".join(lines)
-    return msg
+        records.append(rec)
+    return records
 
 
 def check_stocks_time():
-    """
-    :return: boolean, True if
-    """
     if datetime.now().hour >= 18 or datetime.now().hour < 2:
         return True
     elif datetime.now().weekday() in [5,6]:
         return True
     return False
 
+def rsi(df, column='close', period=14):
+    # Validación mínima para evitar cálculos basura
+    if column not in df.columns:
+        raise ValueError(f"La columna '{column}' no existe en el DataFrame.")
+    if len(df) < period + 1:
+        raise ValueError("No hay suficientes datos para calcular el RSI.")
+
+    delta = df[column].diff()
+
+    # Separar ganancias y pérdidas
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    # Media móvil exponencial según Wilder (similar a EMA con alpha = 1/period)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+
+    df.insert(0, 'rsi', rsi)
+    df.dropna(inplace=True)
+    return df
+
+import time
+import sqlite3
+
+def should_fetch(timeframe, last_open_time_ms):
+    interval_min = TIMEFRAME_MIN[timeframe]
+    interval_ms = interval_min * 60 * 1000
+
+    # Tiempo actual redondeado hacia abajo
+    now_ms = int(time.time() * 1000)
+
+    # Si no ha pasado suficiente tiempo, no hay vela nueva
+    return (now_ms - last_open_time_ms) >= interval_ms
+
+
+def candle_is_final(interval, open_time_ms):
+    """Verifica si la vela ya cerró según la hora actual en UTC."""
+    from datetime import datetime, timezone
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    duration = TIMEFRAME_MIN[interval] * 60 * 1000
+    return now_ms >= open_time_ms + duration
+
+def check_rsi_alerts():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # seleccionar la vela más reciente por simbolo/timeframe
+    cur.execute("""
+        SELECT c.*
+        FROM candles c
+        WHERE (symbol, interval, open_time) IN (
+            SELECT symbol, interval, MAX(open_time)
+            FROM candles
+            WHERE open_time < (
+                SELECT MAX(open_time)
+                FROM candles c2
+                WHERE c2.symbol = candles.symbol
+                  AND c2.interval = candles.interval
+            )
+            GROUP BY symbol, interval
+        );
+    """)
+
+    rows = cur.fetchall()
+
+    for row in rows:
+        symbol = row["symbol"]
+        interval = row["interval"]
+        rsi = row["rsi"]
+        open_time = row["open_time"]
+        local_time = row['local_time']
+
+        # 1. Solo velas cerradas
+        if not candle_is_final(interval, open_time):
+            continue
+
+        # 2. Solo si RSI está por debajo del umbral
+        if rsi is None or rsi >= 30:
+            continue
+
+        # 3. Verificar si ya se envió una alerta para esta vela
+        cur.execute("""
+            SELECT 1 FROM alerts
+            WHERE symbol=? AND interval=? AND open_time=? AND alert_type='RSI_UNDER_30'
+        """, (symbol, interval, open_time))
+
+        if cur.fetchone():
+            # Ya enviada → evitar spam
+            continue
+
+        # 4. Enviar alerta
+        message = f"⚠️ RSI {symbol} {interval}\n{local_time}\nRSI = {rsi:.2f}"
+        send_telegram(message)
+
+        # 5. Registrar alerta para evitar duplicados
+        cur.execute("""
+            INSERT INTO alerts(symbol, interval, open_time, alert_type)
+            VALUES (?, ?, ?, 'RSI_UNDER_30')
+        """, (symbol, interval, open_time))
+
+    conn.commit()
+    conn.close()
+
+TIMEFRAME_MIN = {
+    '1m': 1,
+    '3m': 3,
+    '5m': 5,
+    '15m': 15,
+    '1h': 60,
+    '4h': 240,
+    '1d': 1440,
+    '1w': 10080,  # 7 días
+}
 
 if __name__ == "__main__":
     symbols = ['SOL/USDT'] #, 'VIRTUAL/USDT']
@@ -154,99 +177,26 @@ if __name__ == "__main__":
     trackeo = symbols + stocks
     print(f"Script iniciado: trackeo hibrido {trackeo}")
 
-    # Variables
-    media_lenta = 20
-    media_rapida = 7
-    n_desv = 15
-    z_param = -2
-    last_n = 59
-
-    while True:
-        for activo in trackeo:
-            activo_name = activo.split('/')[0]
+    for activo in symbols:
+        # Operando a frecuencia variable
+        for timeframe in ['1h', '1d', '4h', '15m', '5m', '3m', '1w']:
             try:
-                # ALTA FRECUENCIA OPERANDO CON 1Minuto de muestreo =============
-                if activo in symbols:
-                    df = get_ohlcv(symbol=activo, timeframe='3m', limit=1000)
-                elif activo in stocks:
-                    if check_stocks_time():
-                        continue
-                    df = get_stock_ohlcv(symbol=activo, interval='1m', period='1d')
-            except: send_telegram(f'error al buscar informacion de {activo}'); continue
+                # 1. Obtener última vela guardada
+                base = activo.split('/')[0]
+                last_open = get_latest_open_time(base, timeframe)
 
-            # Calculos
-            # Minimo percentiles: compra segun percentil
-            df['percentil_05'] = alerta_percentil(df['close'], 5, last_n)
-            df['percentil_50'] = alerta_percentil(df['close'],50, last_n)
+                # 2. Verificar si ya deberías pedir nuevas velas
+                if last_open != 0 and not should_fetch(timeframe, last_open):
+                    continue
 
-            # Z-Score: regresion a la media
-            df['z_score'] = alerta_z(df['close'], media_lenta, n_desv)
+                try:
+                    df = get_ohlcv(symbol=activo, timeframe=timeframe, limit=30)
+                except: send_telegram(f'error al buscar informacion de {activo}'); continue
+                df = rsi(df)
+                records = df_to_records(df, activo.split('/')[0], timeframe)
+                inserted = insert_candles(records)
+            except Exception as e:
+                print(e)
 
-            # RSI: compra segun RSI
-            df = alerta_rsi(df)
-
-            # ADX: mide tendencia
-            df = alerta_adx(df)
-
-            # Data Actual
-            row = df.iloc[-1]
-            msg = f"**{activo_name}** **{row['close']:.2f}**\n"
-
-            # Minimo historico en trackeo
-            path = os.path.join('data', f"{activo_name}.txt")
-            prev_value = read_value(path)
-            if prev_value is None or row['close'] < float(prev_value) or activo in symbols:
-                # MINIMO GLOBAL
-                if activo in symbols:
-                    quantiles_df = df
-                    # Identifica la distribucion en las ultima hora ( para ver el rango)
-                    q12 = get_quantiles(quantiles_df[250:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                    q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                    q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                    q_corte = min([q12['q5'], q24['q5'], q48['q5']])
-                else:
-                    quantiles_df = get_stock_ohlcv(symbol=activo, interval='5m', period='1mo')
-                    # Identifica la distribucion en las ultima hora ( para ver el rango)
-                    q24 = get_quantiles(quantiles_df[500:], quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                    q48 = get_quantiles(quantiles_df, quantiles=(0.05, 0.5, 0.75))  # 1 dia
-                    q_corte = min([q24['q5'], q48['q5']])
-                if row['close'] < q_corte:
-                    write_value(path, row['close'])
-                    if activo in stocks:
-                        msg += f"{format_msg(activo_name, row['close'], {'2W': q24, '1MO': q48})}\n"
-                    elif activo in symbols:
-                        msg += f"{format_msg(activo_name, row['close'], {'12': q12, '24':q24, '48':q48})}\n"
-                    if sound == 1:
-                        engine.say(f"{activo_name} mínimo global {int(row['close'])}")
-                        engine.runAndWait()
-                    if activo in symbols:
-                        alerta, rsi_vals = rsi_multi_tf_cripto_check(activo)
-                    else:
-                        alerta, rsi_vals = rsi_multi_tf_stock_check(activo)
-                    # Alerta RSI
-                    # Devuelve RSI en temporalidades
-                    for tf, val in rsi_vals.items():
-                        msg += f"RSI: {val:.0f}: {tf}\n"
-                    # Alerta ADX
-                    if row.get('adx_fuerte', False):
-                        if row['tendencia_alcista']:
-                            q_vals = get_quantiles(df)
-                            rango_total = q_vals['q75'] - q_vals['q25']
-                            rango_libre = q_vals['q75'] - df['close'].iloc[-1]
-                            # Normaliza
-                            rango_libre_pct = rango_libre / rango_total
-                            msg += (f"TENDENCIA ALCISTA {row['adx']:.2f}\n"
-                                    f"RangoLibrePorcentual: {rango_libre_pct:.1f}, Q75: {q_vals['q75']:.2f}\n")
-                        else:
-                            msg += f"TENDENCIA BAJISTA {row['adx']:.2f}\n"
-                    # Alerta Z-Score
-                    if row.get('alerta_z', False):
-                        msg += f"Z SCORE\nclose: {row['close']} media: {row['media_lenta']}\nValorZ: {row['z_score']}\n"
-
-                    send_discord(msg)
-                    send_telegram(msg)
-        if not loop:
-            print('Exiting code')
-            break
-        else:
-            time.sleep(60*4)
+    # después de procesar todos los symbols/timeframes:
+    check_rsi_alerts()

@@ -38,12 +38,19 @@ def get_ohlcv(symbol='DYDX/USDT', timeframe='1m', limit=500):
     exchange = ccxt.binance()
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['open_time'] = df['timestamp']
     df['returns'] = np.log(df['close'] / df['close'].shift(1))
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     # Ajustando la zona horaria a local
-    df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('America/Mexico_City')
+    df['local_time'] = (
+        df['timestamp']
+        .dt.tz_localize('UTC')
+        .dt.tz_convert('America/Mexico_City')
+        .dt.strftime('%Y-%m-%d %H:%M')
+    )
     # Registra que symbol se trabajo
     df['symbol'] = symbol
+    df['interval'] = timeframe
     df.dropna(inplace=True)
     return df
 
