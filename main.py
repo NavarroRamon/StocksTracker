@@ -172,7 +172,7 @@ TIMEFRAME_MIN = {
 }
 
 if __name__ == "__main__":
-    symbols = ['SOL/USDT'] #, 'VIRTUAL/USDT']
+    symbols = ['SOL/USDT', 'BTC/USDT'] #, 'VIRTUAL/USDT']
     stocks = acciones
     trackeo = symbols + stocks
     print(f"Script iniciado: trackeo hibrido {trackeo}")
