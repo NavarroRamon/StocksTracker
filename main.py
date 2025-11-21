@@ -3,7 +3,7 @@ import pandas as pd
 from finance_modules.tickers import acciones
 from finance_modules.telegram import send_telegram
 from finance_modules.data import get_ohlcv
-from StocksTracker.db.db import create_db, insert_candles, get_latest_open_time
+from db.db import create_db, insert_candles, get_latest_open_time
 from pathlib import Path
 
 DB_PATH = Path("db/trading_data.db")
